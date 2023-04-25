@@ -42,6 +42,7 @@ And then execute:
       path                              logs/
       azure_object_key_format           %{path}%{time_slice}_%{index}.log
       time_slice_format                 %Y%m%d-%H
+      compress                          false
       compute_checksums                 true
       # if you want to use %{tag} or %Y/%m/%d/ like syntax in path / azure_blob_name_format,
       # need to specify tag for %{tag} and time for %Y/%m/%d in <buffer> argument.
@@ -146,6 +147,20 @@ The [fluent-mixin-config-placeholders](https://github.com/tagomoris/fluent-mixin
 ### `time_slice_format`
 
 Format of the time used in the file name. Default is '%Y%m%d'. Use '%Y%m%d%H' to split files hourly.
+
+### `compress`
+
+Default: `false`
+
+If `true`, compress (gzip) the file prior to uploading it.
+
+Note: If desired, set `.gz` suffix via `azure_object_key_format`.
+
+Example:
+
+```
+azure_object_key_format %{path}%{time_slice}-%{index}.log.gz
+```
 
 ### `compute_checksums`
 

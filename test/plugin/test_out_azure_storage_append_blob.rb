@@ -2,6 +2,8 @@ require 'helper'
 require 'fluent/plugin/out_azure-storage-append-blob.rb'
 require 'azure/core/http/http_response'
 require 'azure/core/http/http_error'
+require 'stringio'
+require 'zlib'
 
 include Fluent::Test::Helpers
 
@@ -140,6 +142,18 @@ class AzureStorageAppendBlobOutTest < Test::Unit::TestCase
     end
   end
 
+  sub_test_case 'compress options' do
+    test 'compress default value' do
+      d = create_driver
+      assert_equal false, d.instance.instance_variable_get(:@compress)
+    end
+    test 'compress set true' do
+      config = CONFIG.clone + "\ncompress true\n"
+      d = create_driver conf: config
+      assert_equal true, d.instance.instance_variable_get(:@compress)
+    end
+  end
+
   # This class is used to create an Azure::Core::Http::HTTPError. HTTPError parses
   # a response object when it is created.
   class FakeResponse
@@ -150,6 +164,70 @@ class AzureStorageAppendBlobOutTest < Test::Unit::TestCase
     end
 
     attr_reader :status, :body, :headers
+  end
+
+  def uncompress_blocks(blocks)
+      gzip_data = blocks.join
+      uncompressed_data = ""
+      while gzip_data do
+        Zlib::GzipReader.wrap(StringIO.new(gzip_data.b)) do |gz|
+          uncompressed_data << gz.read
+          gzip_data = gz.unused
+        end
+      end
+      uncompressed_data
+  end
+
+  sub_test_case 'test append blob for compress' do
+    test 'compress 2 events 1 chunk' do
+      config = CONFIG.clone + %(
+        compress true
+        <buffer time>
+          timekey      5
+          timekey_wait 0
+        </buffer>
+      )
+
+      svc = FakeBlobService.new(200)
+      d = create_driver conf:config, service: svc
+
+      d.run(default_tag: 'test') do
+        d.feed(event_time("2011-01-02 13:14:15 UTC"), { :a => 1 })
+        d.feed(event_time("2011-01-02 13:14:15 UTC"), { :a => 2 })
+      end
+
+      uncompressed_data = uncompress_blocks(svc.blocks)
+
+      expected =  "2011-01-02T13:14:15+00:00\ttest\t{\"a\":1}\n" +
+                  "2011-01-02T13:14:15+00:00\ttest\t{\"a\":2}\n"
+      assert_equal(expected, uncompressed_data)
+      assert_equal(10, svc.blocks.size)
+    end
+
+    test 'compress 2 events 2 chunk' do
+      config = CONFIG.clone + %(
+        compress true
+        <buffer time>
+          timekey      5
+          timekey_wait 0
+        </buffer>
+      )
+
+      svc = FakeBlobService.new(200)
+      d = create_driver conf:config, service: svc
+
+      d.run(default_tag: 'test') do
+        d.feed(event_time("2011-01-02 13:14:00 UTC"), { :a => 1 })
+        d.feed(event_time("2011-01-02 13:14:15 UTC"), { :a => 2 }) # after 15 sec
+      end
+
+      uncompressed_data = uncompress_blocks(svc.blocks)
+
+      expected = "2011-01-02T13:14:00+00:00\ttest\t{\"a\":1}\n" +
+                 "2011-01-02T13:14:15+00:00\ttest\t{\"a\":2}\n"
+      assert_equal(expected, uncompressed_data)
+      assert_equal(20, svc.blocks.size)
+    end
   end
 
   # This class is used to test plugin functions which interact with the blob service

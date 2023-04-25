@@ -8,6 +8,7 @@ require 'azure/storage/blob'
 require 'faraday'
 require 'fluent/plugin/output'
 require 'json'
+require 'zlib'
 
 module Fluent
   module Plugin
@@ -46,6 +47,7 @@ module Fluent
       config_param :azure_object_key_format, :string, default: '%{path}%{time_slice}-%{index}.log'
       config_param :auto_create_container, :bool, default: true
       config_param :compute_checksums, :bool, default: true
+      config_param :compress, :bool, default: false
       config_param :format, :string, default: DEFAULT_FORMAT_TYPE
       config_param :time_slice_format, :string, default: '%Y%m%d'
       config_param :localtime, :bool, default: false
@@ -124,7 +126,9 @@ module Fluent
 
       def start
         super
-        if @use_msi
+        if @bs
+          # nop
+        elsif @use_msi
           token_credential = Azure::Storage::Common::Core::TokenCredential.new get_access_token
           token_signer = Azure::Storage::Common::Core::Auth::TokenSigner.new token_credential
           @bs = Azure::Storage::Blob::BlobService.new(
@@ -171,10 +175,49 @@ module Fluent
         @formatter.format(tag, time, r)
       end
 
+      def write_compress(chunk, tmp)
+        tmp.binmode
+        write_compress_helper(chunk, tmp)
+        tmp.rewind
+      end
+
+      # ref: https://github.com/fluent/fluent-plugin-s3/blob/master/lib/fluent/plugin/s3_compressor_gzip_command.rb
+      def write_compress_helper(chunk, tmp)
+        chunk_is_file = @buffer_type == 'file'
+        path = if chunk_is_file
+                 chunk.path
+               else
+                 w = Tempfile.new("chunk-gzip-tmp")
+                 w.binmode
+                 chunk.write_to(w)
+                 w.close
+                 w.path
+               end
+
+        res = system "gzip -c #{path} > #{tmp.path}"
+        unless res
+          log.warn "failed to execute gzip command. Fallback to GzipWriter. status = #{$?}"
+          begin
+            tmp.truncate(0)
+            gw = Zlib::GzipWriter.new(tmp)
+            chunk.write_to(gw)
+            gw.close
+          ensure
+            gw.close rescue nil
+          end
+        end
+      ensure
+        w.close(true) rescue nil
+      end
+
       def write(chunk)
         tmp = Tempfile.new('azure-')
         begin
-          chunk.write_to(tmp)
+          if @compress
+            write_compress(chunk, tmp)
+          else
+            chunk.write_to(tmp)
+          end
 
           generate_log_name(chunk, @current_index)
           if @last_azure_storage_path != @azure_storage_path
