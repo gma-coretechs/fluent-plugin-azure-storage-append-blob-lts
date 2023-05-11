@@ -1,29 +1,28 @@
-name: Publish Ruby Gem
-
-on:
-  workflow_dispatch:
-    inputs:
-      otp:
-        description: 'One Time Password'
-        required: true
-
+---
 jobs:
   build:
     name: Build + Publish
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Ruby 2.6
-      uses: actions/setup-ruby@v1
-      with:
-        ruby-version: 2.6.x
-    - name: Publish to RubyGems
-      run: |
-        mkdir -p $HOME/.gem
-        touch $HOME/.gem/credentials
-        chmod 0600 $HOME/.gem/credentials
-        printf -- "---\n:rubygems_api_key: ${RUBYGEMS_API_KEY}\n" > $HOME/.gem/credentials
-        gem build *.gemspec
-        gem push *.gem --otp ${{ github.event.inputs.otp }}
-      env:
-        RUBYGEMS_API_KEY: "${{secrets.RUBYGEMS_AUTH_TOKEN}}"
+      - uses: actions/checkout@v3
+      - name: Set up Ruby
+        uses: actions/setup-ruby@v1
+        with:
+          ruby-version: "3.1"
+      - env:
+          RUBYGEMS_API_KEY: "${{secrets.RUBYGEMS_AUTH_TOKEN}}"
+        name: Publish to RubyGems
+        run: |
+          mkdir -p $HOME/.gem
+          touch $HOME/.gem/credentials
+          chmod 0600 $HOME/.gem/credentials
+          printf -- "---\n:rubygems_api_key: ${RUBYGEMS_API_KEY}\n" > $HOME/.gem/credentials
+          gem build *.gemspec
+          gem push *.gem --otp ${{ github.event.inputs.otp }}
+name: Publish Ruby Gem
+on:
+  workflow_dispatch:
+    inputs:
+      otp:
+        description: "One Time Password"
+        required: true
