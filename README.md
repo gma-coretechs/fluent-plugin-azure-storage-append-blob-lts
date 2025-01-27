@@ -29,6 +29,7 @@ And then execute:
       type azure-storage-append-blob
 
       azure_cloud                       <azure cloud environment>
+      azure_storage_dns_suffix          <your azure storage dns suffix> # only used for Azure Stack Cloud
       azure_storage_account             <your azure storage account>
       azure_storage_access_key          <your azure storage access key> # leave empty to use MSI
       azure_storage_connection_string   <your azure storage connection string> # leave empty to use MSI
@@ -41,6 +42,7 @@ And then execute:
       path                              logs/
       azure_object_key_format           %{path}%{time_slice}_%{index}.log
       time_slice_format                 %Y%m%d-%H
+      compress                          false
       compute_checksums                 true
       # if you want to use %{tag} or %Y/%m/%d/ like syntax in path / azure_blob_name_format,
       # need to specify tag for %{tag} and time for %Y/%m/%d in <buffer> argument.
@@ -59,6 +61,12 @@ Default: `AZUREPUBLICCLOUD`
 
 Cloud environment used to determine the storage endpoint suffix to use, see [here](https://github.com/Azure/go-autorest/blob/master/autorest/azure/environments.go).
 
+Use `AZURESTACKCLOUD` for Azure Stack Cloud.
+
+### `azure_storage_dns_suffix` (Required only for Azure Stack Cloud)
+
+Your Azure Storage endpoint suffix. This can be retrieved from Azure Storage connection string, `EndpointSuffix` section.
+
 ### `azure_storage_account` (Required)
 
 Your Azure Storage Account Name. This can be retrieved from Azure Management portal.
@@ -72,11 +80,11 @@ If all are empty, the plugin will use the local Managed Identity endpoint to obt
 
 ### `azure_imds_api_version` (Optional, only for MSI)
 
-Default: `2019-08-15`
+Default: `2020-12-01`
 
 The Instance Metadata Service is used during the OAuth flow to obtain an access token. This API is versioned and specifying the version is mandatory.
 
-See [here](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/instance-metadata-service#versioning) for more details.
+See [here](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/instance-metadata-service?tabs=windows#versioning) for more details.
 
 ### `azure_token_refresh_interval` (Optional, only for MSI)
 
@@ -139,6 +147,20 @@ The [fluent-mixin-config-placeholders](https://github.com/tagomoris/fluent-mixin
 ### `time_slice_format`
 
 Format of the time used in the file name. Default is '%Y%m%d'. Use '%Y%m%d%H' to split files hourly.
+
+### `compress`
+
+Default: `false`
+
+If `true`, compress (gzip) the file prior to uploading it.
+
+Note: If desired, set `.gz` suffix via `azure_object_key_format`.
+
+Example:
+
+```
+azure_object_key_format %{path}%{time_slice}-%{index}.log.gz
+```
 
 ### `compute_checksums`
 
